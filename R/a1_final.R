@@ -1,9 +1,11 @@
 ##***************************
 ## Assignment 1
 ##
-## Ali Al-Reda El-Zein 
+## Group's Partner: Anthony 
 ##
-## 2026-11-02
+## Name: Minh-Phuc Pham
+##
+## 2026-11-23
 ##
 ##***************************
 
@@ -14,164 +16,120 @@ library(tidyverse)
 
 ## import data -----
 
-df_trich_s <- read_csv("../data/trichinella_spiralis_te.csv")
-genus_types <- read_csv("../data/2026-10-19_trich_genotypes.csv")
-trich_zb <- read_csv("../data/trich_z.csv")
+df_s_raw <- read_csv("data/trichinella_spiralis_te.csv")
+df_zim_raw <- read_csv("data/trich_z.csv")
 
 ## filtering data for DNA transposons for T. zimbabwensis -----
+dna_zim <- df_zim_raw |>
+  pull(matching_class) |>
+  unique() |>
+  str_subset("^(DNA/|RC/)")
 
-trich_zb$matching_class |> unique()
-
-non_te_z <- c("Simple_repeat", "Low_complexity", "Satellite", "snRNA", "rRNA", "Unknown")
-
-dna_te_z <- c("DNA/PIF-Harbinger", "DNA/TcMar-Tc1", "DNA/MULE-MuDR", 
-              "DNA/TcMar-Tc4", "DNA/TcMar-Pogo", "DNA/CMC-Chapaev", 
-              "DNA/TcMar-Mariner", "DNA/PiggyBac","RC/Helitron")
-
-trich_z <- trich_zb |> 
-  filter(matching_class %notin% non_te_z) |>
-  filter(matching_class %in% dna_te_z) 
-
-trich_z$species = c("Trichinella zimbabwensis")
+df_zim <- df_zim_raw |>
+  filter(matching_class %in% dna_zim) |>
+  mutate(species = "Trichinella zimbabwensis")
 
 ## filtering data for DNA transposons for T. spiralis -----
+dna_s <- df_s_raw |>
+  pull(matching_class) |>
+  unique() |>
+  str_subset("^(DNA/|RC/)")
 
-df_trich_s$matching_class |> unique()
+df_s <- df_s_raw |>
+  filter(matching_class %in% dna_s) |>
+  mutate(species = "Trichinella spiralis")
 
-non_te_s <-  c("simple_repeat", "Simple_repeat", "Low_complexity", "Satellite", "rRNA", "snRNA", "ARTEFACT", "Unknown")
-
-dna_te_s <- c("DNA/TcMar-Tc4", "DNA/TcMar-Tc1", "DNA/hAT", 
-              "DNA/PIF-Harbinger", "DNA/TcMar-Mariner", "RC/Helitron", "DNA/hAT-Ac", "DNA/MULE-MuDR", "DNA/TcMar-Pogo", "DNA/CMC-Chapaev")
-
-trich_s <- df_trich_s |> 
-  filter(matching_class %notin% non_te_s) |> 
-  filter(matching_class %in% dna_te_s) 
-
-trich_s$species = c("Trichinella spiralis")
-
-  
 ## identifying and filtering the common DNA transposons between the two species -----
 
-trich_s$matching_class |> unique()
+#using intersect() to automate the commonly shared dna transposons b/w the two species rather than manually typing it
+dna_shared <- intersect(dna_s, dna_zim) 
 
-trich_z$matching_class |> unique()
+## Filter shared DNA transposon classes ----
+df_s_shared <- df_s |>
+  filter(matching_class %in% dna_shared) 
 
-dte_common <- c("DNA/PIF-Harbinger", "DNA/TcMar-Tc1", "DNA/MULE-MuDR", 
-               "DNA/TcMar-Tc4", "DNA/TcMar-Pogo", "DNA/CMC-Chapaev", 
-            "DNA/TcMar-Mariner", "RC/Helitron")
+df_zim_shared <- df_zim |>
+  filter(matching_class %in% dna_shared)
 
-ts_common <- trich_s |> 
-  group_by(matching_class) |> 
-  select(matching_class, qry_width, perc_insert, species) |> 
-  filter(matching_class %in% dte_common) |> 
-  distinct(perc_insert, .keep_all = TRUE) |> 
+# Retain all observations rather than selecting only the longest sequences to examine the full range of sequence lengths.
+
+#Combine both species for comparison
+df_both <- bind_rows(df_s_shared, df_zim_shared)
+
+
+## Edit 2: Validate changes in data selection ----
+# Compare Ali's original filtering with our revised approach.
+
+## Reproduce Anthony group's original distinct() filtering, with my updated naming variable ----
+df_old_s <- df_s_shared |>
+  group_by(matching_class) |>
+  select(matching_class, qry_width, perc_insert, species) |>
+  distinct(perc_insert, .keep_all = TRUE) |>
   distinct(qry_width, .keep_all = TRUE)
 
-tz_common <- trich_z |> 
-  group_by(matching_class) |> 
-  select(matching_class, qry_width, perc_insert, species) |> 
-  filter(matching_class %in% dte_common) |> 
-  distinct(perc_insert, .keep_all = TRUE) |> 
+df_old_zim <- df_zim_shared |>
+  group_by(matching_class) |>
+  select(matching_class, qry_width, perc_insert, species) |>
+  distinct(perc_insert, .keep_all = TRUE) |>
   distinct(qry_width, .keep_all = TRUE)
 
 
-## filtering the 5 largest DNA transposons in the two species -----
+## Compare the number of observations ----
 
-ts_5 <- ts_common|> 
-  top_n(5, qry_width)
+# All observations retained in our revised analysis
+n_full <- nrow(df_both)
 
-tz_5 <- tz_common |> 
-  top_n(5, qry_width)
+# Observations retained after Ali's distinct() filtering
+n_distinct <- nrow(df_old_s) + nrow(df_old_zim)
 
-combined_5 <- rbind(ts_5, tz_5)
+# Observations retained after Ali's top-five selection
+n_top5 <- nrow(df_old_s |> top_n(5, qry_width)) +
+  nrow(df_old_zim |> top_n(5, qry_width))
+
+# Observations retained after selecting the largest per class
+n_max <- nrow(df_old_s |> slice(which.max(qry_width))) +
+  nrow(df_old_zim |> slice(which.max(qry_width)))
+
+# Calculate the number and percentage removed by distinct()
+n_removed <- n_full - n_distinct
+pct_removed <- round(n_removed / n_full * 100, 1)
 
 
-## filtering the largest transposons for each species -----
+## Print results ----
 
-ts_largest <- ts_common |> 
-  slice(which.max(qry_width))  
+print(c(
+  n_full = n_full,
+  n_distinct = n_distinct,
+  n_top5 = n_top5,
+  n_max = n_max,
+  n_removed = n_removed,
+  pct_removed = pct_removed
+))
 
-tz_largest <- tz_common |> 
-  slice(which.max(qry_width))
-
-## creating a combined dataframe for the largest transposons in both species -----
-
-combined_largest <- rbind(tz_largest, ts_largest)
-
-## creating T. zimbabwensis plot -----
-
-p_tz <- ggplot(
-  tz_largest,
-  aes(x = qry_width, y=perc_insert, colour = matching_class)
+## Compare sequence length and insertion percentage ----
+p_both <- ggplot(
+  df_both,
+  aes(x = qry_width, y = perc_insert, colour = species)
 ) +
-  geom_point(size = 5) +
-  labs(title = "How Sequence Length Affects Percent Insertion in T. zimbabwensis for Each DNA Transposon Type.",
-       subtitle = "Using the Largest Sequence per Transposon Type (In Base Pairs)",
-       x = "Sequence Length (bp)",
-       y = "Percent Insertion",
-       colour = "DNA Transposon Type")
+  geom_point(alpha = 0.5, size = 2) +
+  facet_wrap(~ matching_class, scales = "free_x") +
+  labs(
+    title = "Sequence Length and Insertion Percentage",
+    subtitle = "Shared DNA transposon classes in two Trichinella species",
+    x = "Query sequence length (bp)",
+    y = "Insertion percentage",
+    colour = "Species"
+  ) +
+  theme_light()
 
-print(p_tz)
+print(p_both)
 
-ggsave("tz.png", path = "../output")
+ggsave(
+  "shared_dna_comparison.png",
+  path = "output",
+  plot = p_both
+)
 
-## creating T. spiralis plot -----
-p_ts <- ggplot(
-  ts_largest,
-  aes(x = qry_width, y=perc_insert, colour = matching_class)
-) +
-  geom_point(size = 5)+
-  labs(title = "How Sequence Length Affects Percent Insertion in T. spiralis for Each DNA Transposon Type.",
-       subtitle = "Using the Largest Sequence per Transposon Type (In Base Pairs)",
-       x = "Sequence Length (bp)",
-       y = "Percent Insertion",
-       colour = "DNA Transposon Type")
-
-print(p_ts)   
-
-ggsave("ts.png", path = "../output")
-
-## creating combined plot for top 5 largest sequences per DNA transposon -----
-
-combined_top5 <- ggplot(
-  combined_5,
-  aes(x =qry_width, y =perc_insert, 
-      colour = matching_class, shape = combined_5$species)) +
-    geom_point(size = 3) + 
-    geom_line(size = 0.5) +
-  xlim(0,750) +
-  ylim(0,15) +
-  labs(title = "The Effects of Sequence Length on Percent Insertion in T. spiralis & T.zimbabwensis for Each DNA Transposon Type.",
-       subtitle = "Using the Top 5 Largest DNA Transposon Sequences in Base Pairs.",
-       x = "Sequence Length (bp)",
-       y = "Percent Insertion",
-       colour = "DNA Transposon Type",
-       shape = "Species")
-
-
-print(combined_top5)
-
-ggsave("combined_top5.png", path = "../output")
-
-
-## creating combined plot for largest transposon length per DNA transposon-----
-
-combined_largest <- ggplot() +
-  geom_point(data = combined_largest, 
-             aes(x =qry_width, y =perc_insert, 
-                 colour = matching_class, shape = combined_largest$species,
-                 size = 5)) +
-  guides(size = "none") +
-  labs(title = "The Effects of Sequence Length on Percent Insertion in T. spiralis & T.zimbabwensis for Each DNA Transposon Type.",
-       subtitle = "Using the Largest DNA Transposon Sequences in Base Pairs.",
-       x = "Sequence Length (bp)",
-       y = "Percent Insertion",
-       colour = "DNA Transposon Type",
-       shape = "Species")
-
-print(combined_largest)
-
-ggsave("combined_largest.png", path = "../output")
 
 
 
